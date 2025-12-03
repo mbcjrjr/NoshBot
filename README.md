@@ -6,7 +6,7 @@ Brought to you by the Meateorologists
 
 Made with the assistence of Gemini 
 
-website: noshbot.netlify.app
+Website: noshbot.netlify.app
 
 NoshBot is a smart, responsive Progressive Web App (PWA) designed to help William & Mary students navigate campus dining. It allows users to filter menus based on specific dietary restrictions (Allergies, Vegan, Halal, Kosher), plan their weekly meals, and receive AI-powered nutritional advice.
 
