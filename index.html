@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NoshBot | W&M Dining</title>
+    
+    <link rel="manifest" href="manifest.json">
+    
+    <link rel="icon" type="image/png" href="noshbot-griffin.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-firestore-compat.js"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/generative-ai": "https://esm.run/@google/generative-ai"
+        }
+      }
+    </script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        wmGreen: '#115740', 
+                        wmGold: '#B9975B',
+                        wmDarkBg: '#0B291E',
+                    },
+                    fontFamily: {
+                        serif: ['"Crimson Text"', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Crimson Text', serif; }
+        .tag-badge { font-family: sans-serif; font-size: 0.7rem; }
+        .toggle-checkbox:checked { right: 0; border-color: #115740; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #115740; }
+        .ai-response ul { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 1rem; }
+        .ai-response strong { color: #115740; }
+        .dark .ai-response strong { color: #B9975B; }
+        
+        /* Selected item style in modal */
+        .food-selected {
+            background-color: #dcfce7 !important; /* Green-100 */
+            border-left: 4px solid #115740 !important;
+        }
+        .dark .food-selected {
+            background-color: #064e3b !important; /* Green-900 */
+            border-left: 4px solid #B9975B !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 flex flex-col min-h-screen transition-colors duration-300">
+
+    <div id="loading-spinner" class="fixed inset-0 z-50 flex items-center justify-center bg-wmGreen bg-opacity-90 backdrop-blur-sm">
+        <div class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-wmGold mb-4"></div>
+            <p id="loading-text" class="text-wmGold font-bold text-lg animate-pulse">Loading NoshBot...</p>
+        </div>
+    </div>
+
+    <div id="offline-banner" class="hidden bg-red-600 text-white text-center text-xs py-1 font-bold">
+        You are currently offline. AI features unavailable.
+    </div>
+
+    <div id="auth-container" class="container mx-auto max-w-md mt-20 p-8 bg-white dark:bg-gray-800 rounded-xl shadow-2xl text-center border-t-8 border-wmGreen flex flex-col items-center">
+        <div class="mb-4">
+            <img src="noshbot-logo.png" alt="NoshBot Full Logo" class="w-72 mx-auto drop-shadow-md">
+        </div>
+        
+        <p class="text-lg text-gray-600 dark:text-gray-300 mb-8 mt-2">Your smart dining assistant for W&M</p>
+        
+        <button id="login-btn" class="w-full bg-wmGreen hover:bg-green-900 text-wmGold font-bold py-3 px-4 rounded-lg flex items-center justify-center shadow-lg transition duration-300 border border-wmGold mb-6">
+            Sign In with Google
+        </button>
+
+        <p class="text-xs text-gray-400 font-sans uppercase tracking-widest">Brought to you by the Meateorologists</p>
+    </div>
+
+    <div id="app-container" class="hidden flex-grow container mx-auto max-w-6xl p-4 flex flex-col">
+        
+        <header class="bg-wmGreen dark:bg-wmDarkBg p-4 rounded-xl shadow-lg mb-6 flex flex-col md:flex-row justify-between items-center text-white border-b-4 border-wmGold">
+            <div class="flex items-center space-x-3 mb-4 md:mb-0">
+                <div class="bg-transparent p-0 rounded-full shadow-none">
+                     <img src="noshbot-griffin.png" alt="NoshBot Icon" class="h-12 w-auto">
+                </div>
+                <h1 class="text-3xl font-bold text-wmGold">NoshBot <span class="text-xl font-normal text-white">| W&M Dining</span></h1>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-green-800 transition">
+                    <svg id="icon-sun" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="icon-moon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
+                <button id="logout-btn" class="text-sm bg-green-900 hover:bg-black text-white py-2 px-4 rounded border border-gray-600 transition shadow-sm">Logout</button>
+            </div>
+        </header>
+
+        <nav class="flex overflow-x-auto space-x-2 mb-6 pb-2">
+            <button data-view="profile-view" class="nav-btn flex-1 whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:text-wmGreen py-3 px-4 rounded-lg font-bold shadow-sm border-b-4 border-transparent hover:border-wmGold transition">My Profile</button>
+            <button data-view="menu-view" class="nav-btn flex-1 whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:text-wmGreen py-3 px-4 rounded-lg font-bold shadow-sm border-b-4 border-transparent hover:border-wmGold transition">Filtered Menu</button>
+            <button data-view="plan-view" class="nav-btn flex-1 whitespace-nowrap bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:text-wmGreen py-3 px-4 rounded-lg font-bold shadow-sm border-b-4 border-transparent hover:border-wmGold transition">My Plan</button>
+            <button id="admin-nav-btn" data-view="admin-view" class="nav-btn hidden whitespace-nowrap bg-gray-800 text-wmGold py-3 px-4 rounded-lg font-bold shadow-sm border-b-4 border-transparent">Admin Panel</button>
+        </nav>
+
+        <div id="profile-view" class="view bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border-t-4 border-wmGreen flex-grow">
+            <h2 class="text-3xl font-bold text-wmGreen dark:text-wmGold mb-6 border-b dark:border-gray-700 pb-2">Dietary Profile</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 font-sans">
+                <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg border border-gray-100 dark:border-gray-600">
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-3 uppercase tracking-wider text-wmGreen dark:text-wmGold">Lifestyle</h3>
+                    <div id="lifestyle-options" class="space-y-3">
+                        <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer transition"><input type="radio" name="lifestyle" value="none" class="mr-3 h-5 w-5 text-wmGreen focus:ring-wmGold"> No Restrictions</label>
+                        <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer transition"><input type="radio" name="lifestyle" value="Vegetarian" class="mr-3 h-5 w-5 text-wmGreen focus:ring-wmGold"> Vegetarian</label>
+                        <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer transition"><input type="radio" name="lifestyle" value="Vegan" class="mr-3 h-5 w-5 text-wmGreen focus:ring-wmGold"> Vegan</label>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg border border-gray-100 dark:border-gray-600">
+                        <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-3 uppercase tracking-wider text-wmGreen dark:text-wmGold">Dietary Laws</h3>
+                        <div id="religious-options" class="flex space-x-4">
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Halal" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Halal</label>
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Kosher" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Kosher</label>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg border border-gray-100 dark:border-gray-600">
+                        <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-3 uppercase tracking-wider text-wmGreen dark:text-wmGold">Allergies to AVOID</h3>
+                        <div id="allergy-options" class="grid grid-cols-2 gap-2">
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Contains Gluten" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Gluten</label>
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Contains Dairy" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Dairy</label>
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Contains Nuts" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Nuts</label>
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Contains Soy" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Soy</label>
+                            <label class="flex items-center p-2 hover:bg-white dark:hover:bg-gray-600 rounded cursor-pointer"><input type="checkbox" value="Contains Shellfish" class="mr-2 rounded text-wmGreen focus:ring-wmGold"> Shellfish</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button id="save-profile-btn" class="mt-8 w-full md:w-auto bg-wmGreen hover:bg-green-900 text-wmGold font-bold py-3 px-8 rounded-lg shadow-md transition transform hover:scale-105">Save Profile</button>
+            <span id="profile-save-status" class="ml-4 font-bold text-wmGreen dark:text-wmGold"></span>
+        </div>
+
+        <div id="menu-view" class="view hidden bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border-t-4 border-wmGold flex-grow">
+            <div class="flex justify-between items-center mb-6 border-b dark:border-gray-700 pb-4">
+                <h2 class="text-3xl font-bold text-wmGreen dark:text-wmGold">The Menu</h2>
+                <div class="flex items-center">
+                    <label for="show-all-toggle" class="flex items-center cursor-pointer">
+                        <div class="relative">
+                            <input type="checkbox" id="show-all-toggle" class="sr-only">
+                            <div class="w-10 h-4 bg-gray-400 rounded-full shadow-inner"></div>
+                            <div class="dot absolute w-6 h-6 bg-white rounded-full shadow -left-1 -top-1 transition"></div>
+                        </div>
+                        <div class="ml-3 text-gray-700 dark:text-gray-300 font-bold font-sans text-sm">Show All Items</div>
+                    </label>
+                </div>
+            </div>
+            <p class="mb-6 text-gray-500 dark:text-gray-400 italic font-sans" id="menu-subtitle">NoshBot is showing only items safe for your profile.</p>
+            <div id="filtered-menu-content" class="space-y-8"></div>
+        </div>
+
+        <div id="plan-view" class="view hidden bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md flex-grow">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 border-b dark:border-gray-700 pb-4">
+                <div>
+                    <h2 class="text-3xl font-bold text-wmGreen dark:text-wmGold">My Weekly Plan</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Tap a slot to edit or add multiple items.</p>
+                </div>
+                <div class="space-x-2 mt-4 md:mt-0 flex flex-wrap gap-2">
+                    <button id="clear-plan-btn" class="text-xs bg-red-50 text-red-600 hover:bg-red-100 py-2 px-3 rounded font-sans font-bold transition border border-red-200">Clear</button>
+                    <button id="restore-plan-btn" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 py-2 px-3 rounded font-sans font-bold transition border border-blue-200">Reset</button>
+                    <button id="auto-fill-btn" class="text-xs bg-yellow-50 text-yellow-700 hover:bg-yellow-100 py-2 px-3 rounded font-sans font-bold transition border border-yellow-200">🎲 Auto-Fill Week</button>
+                    <button id="ai-insight-btn" class="text-xs bg-wmGreen text-wmGold hover:bg-green-900 py-2 px-4 rounded font-sans font-bold transition shadow-lg animate-pulse">
+                        ✨ Analyze Nutrition
+                    </button>
+                </div>
+            </div>
+            
+            <div id="meal-plan-grid" class="grid grid-cols-1 md:grid-cols-7 gap-2 font-sans"></div>
+        </div>
+
+        <div id="admin-view" class="view hidden bg-gray-50 dark:bg-gray-900 p-6 rounded-xl shadow-inner border border-gray-300 dark:border-gray-700 flex-grow">
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-6 flex items-center">
+                <span class="bg-gray-800 text-wmGold px-2 py-1 rounded mr-3 text-sm">ADMIN</span>
+                Add Menu Item
+            </h2>
+            
+            <div class="mb-8 p-4 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                <h3 class="font-bold text-lg mb-2 dark:text-white">Bulk Upload</h3>
+                <p class="text-sm text-gray-500 mb-2">Paste JSON data here to add multiple items at once.</p>
+                <textarea id="bulk-json-input" class="w-full h-24 p-2 text-xs border rounded bg-gray-50 dark:bg-gray-900 dark:text-white font-mono" placeholder='[{"name":"Pizza","day":"Monday","meal":"Lunch","station":"Pizza","tags":["Vegetarian"]}]'></textarea>
+                <div class="flex space-x-2 mt-2">
+                    <button id="fill-sample-data-btn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-1 px-4 rounded text-sm transition">⚡ Auto-Fill Sample Menu</button>
+                    <button id="bulk-import-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-4 rounded text-sm transition">Import These Items</button>
+                </div>
+            </div>
+
+            <form id="add-menu-item-form" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow space-y-4">
+                <h3 class="font-bold text-lg dark:text-white border-b pb-2">Add Single Item</h3>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Food Name</label>
+                    <input type="text" id="food-name" required class="mt-1 block w-full border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md p-2 focus:border-wmGreen focus:outline-none">
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Day</label>
+                        <select id="food-day" class="mt-1 block w-full border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md p-2 bg-white disabled:bg-gray-200 disabled:text-gray-400">
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                            <option value="Sunday">Sunday</option>
+                        </select>
+                        
+                        <div class="mt-2 flex items-center">
+                            <input type="checkbox" id="every-day-checkbox" class="h-4 w-4 text-wmGreen focus:ring-wmGold border-gray-300 rounded">
+                            <label for="every-day-checkbox" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                                Make available every day of the week
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Meal</label>
+                        <select id="food-meal" class="mt-1 block w-full border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md p-2 bg-white">
+                            <option value="Breakfast">Breakfast</option>
+                            <option value="Lunch">Lunch</option>
+                            <option value="Dinner">Dinner</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Station</label>
+                        <select id="food-station" class="mt-1 block w-full border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md p-2 bg-white">
+                            <option value="Global Kitchen">Global Kitchen</option>
+                            <option value="Under The Hood">Under The Hood</option>
+                            <option value="Trattoria">Trattoria</option>
+                            <option value="Pizza">Pizza</option>
+                            <option value="Main Ingredient">Main Ingredient</option>
+                            <option value="Graze">Graze</option>
+                            <option value="Root">Root</option>
+                            <option value="Fruit and yogurt bar">Fruit and yogurt bar</option>
+                            <option value="True Balance">True Balance</option>
+                            <option value="Sweet Pickles">Sweet Pickles</option>
+                            <option value="Smoothies & Milkshakes">Smoothies & Milkshakes</option>
+                            <option value="Sweet Nothings">Sweet Nothings</option>
+                            <option value="Toppings Bar">Toppings Bar</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">Dietary Tags</label>
+                    <div id="admin-tags" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm dark:text-gray-300">
+                        <label class="flex items-center"><input type="checkbox" value="Vegan" class="mr-2"> Vegan</label>
+                        <label class="flex items-center"><input type="checkbox" value="Vegetarian" class="mr-2"> Vegetarian</label>
+                        <label class="flex items-center"><input type="checkbox" value="Halal" class="mr-2"> Halal</label>
+                        <label class="flex items-center"><input type="checkbox" value="Kosher" class="mr-2"> Kosher</label>
+                        <label class="flex items-center"><input type="checkbox" value="Gluten-Free" class="mr-2"> Gluten-Free</label>
+                        <label class="flex items-center"><input type="checkbox" value="Contains Gluten" class="mr-2 text-red-500"> Contains Gluten</label>
+                        <label class="flex items-center"><input type="checkbox" value="Contains Dairy" class="mr-2 text-red-500"> Contains Dairy</label>
+                        <label class="flex items-center"><input type="checkbox" value="Contains Nuts" class="mr-2 text-red-500"> Contains Nuts</label>
+                        <label class="flex items-center"><input type="checkbox" value="Contains Soy" class="mr-2 text-red-500"> Contains Soy</label>
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-gray-800 hover:bg-black text-wmGold font-bold py-2 px-6 rounded shadow-md transition">Add to Database</button>
+            </form>
+
+            <h3 class="text-xl font-bold mt-8 mb-4 text-gray-700 dark:text-gray-300">Database Items</h3>
+            <div id="admin-menu-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+        </div>
+
+        <footer class="mt-8 text-center text-gray-400 text-xs font-sans pb-4">Brought to you by the Meateorologists</footer>
+    </div>
+    
+    <div id="food-picker-modal" class="hidden fixed inset-0 z-40 bg-wmGreen bg-opacity-80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full transform transition-all scale-100 flex flex-col max-h-[85vh]">
+            <div class="bg-wmGreen dark:bg-wmDarkBg p-4 rounded-t-xl flex justify-between items-center border-b border-wmGold shrink-0">
+                <div>
+                    <h3 class="text-xl font-bold text-wmGold" id="modal-title">Select Food</h3>
+                    <p class="text-xs text-white opacity-80">Tap multiple items to build your meal.</p>
+                </div>
+                <button id="modal-close-btn" class="text-white hover:text-wmGold text-2xl">&times;</button>
+            </div>
+            <div id="modal-food-list" class="p-4 overflow-y-auto space-y-2 flex-grow"></div>
+            <div class="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-700 rounded-b-xl shrink-0 flex space-x-2">
+                <button id="modal-clear-btn" class="flex-1 bg-red-100 hover:bg-red-200 text-red-700 font-bold py-3 px-4 rounded-lg transition">Clear Slot</button>
+                <button id="modal-save-btn" class="flex-[2] bg-wmGreen hover:bg-green-900 text-wmGold font-bold py-3 px-4 rounded-lg transition shadow-lg">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ai-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-80 backdrop-blur-md flex items-center justify-center p-4 font-sans">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full h-3/4 flex flex-col">
+            <div class="bg-wmGreen dark:bg-wmDarkBg p-4 rounded-t-xl flex justify-between items-center border-b border-wmGold">
+                <h3 class="text-xl font-bold text-wmGold flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                    NoshBot Analysis
+                </h3>
+                <button id="ai-modal-close" class="text-white hover:text-wmGold text-2xl">&times;</button>
+            </div>
+            <div id="ai-content" class="p-6 overflow-y-auto flex-grow text-gray-800 dark:text-gray-200 ai-response text-lg leading-relaxed">
+            </div>
+        </div>
+    </div>
+
+    <style>
+        #show-all-toggle:checked ~ .dot { transform: translateX(100%); background-color: #B9975B; }
+        #show-all-toggle:checked ~ div:nth-child(2) { background-color: #115740; }
+    </style>
+
+    <script type="module">
+        // ------------------------------------------------------------------
+        // 🔥 CONFIGURATION ZONE
+        // ------------------------------------------------------------------
+        
+        // 1. PASTE FIREBASE CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyDfBO_NYy3O1pz0ClUzPYgb16_psuTdIP4",
+            authDomain: "noshbot.firebaseapp.com",
+            projectId: "noshbot",
+            storageBucket: "noshbot.firebasestorage.app",
+            messagingSenderId: "417247130140",
+            appId: "1:417247130140:web:959e731667f92b8d8c25d9",
+            measurementId: "G-JWJEN379RV"
+        };
+
+        // 2. PASTE GEMINI API KEY
+        const GEMINI_API_KEY = "AIzaSyA_zEsYvgKT6d8bRrXmVj0m02-PqTvUSWs";
+
+        // ------------------------------------------------------------------
+        // IMPORT GEMINI
+        import { GoogleGenerativeAI } from "@google/generative-ai";
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+        // INITIALIZE FIREBASE
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        // ⚡ OFFLINE PERSISTENCE
+        db.enablePersistence().catch(err => console.log(err.code));
+
+        const googleProvider = new firebase.auth.GoogleAuthProvider();
+        const usersCollection = db.collection("users");
+        const menuCollection = db.collection("menuItems");
+        const plansCollection = db.collection("mealPlans");
+
+        // ⚡ REGISTER SERVICE WORKER
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW failed', err));
+            });
+        }
+
+        // OFFLINE DETECTION
+        window.addEventListener('offline', () => document.getElementById('offline-banner').classList.remove('hidden'));
+        window.addEventListener('online', () => document.getElementById('offline-banner').classList.add('hidden'));
+
+        // STATE
+        let currentUser = null;
+        let userProfile = { lifestyle: 'none', allergies: [], dietaryLaws: [] };
+        let allMenuItems = [];
+        let currentMealPlan = {}; 
+        let currentModalContext = { day: '', meal: '' };
+        let tempSelectedItems = []; // For multi-select
+        let showAllItems = false;
+
+        // DOM UTILS
+        const $ = (s) => document.querySelector(s);
+        const $$ = (s) => document.querySelectorAll(s);
+
+        // --- DARK MODE ---
+        const themeToggleBtn = $("#theme-toggle");
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            $("#icon-moon").classList.add('hidden');
+            $("#icon-sun").classList.remove('hidden');
+        }
+        themeToggleBtn.addEventListener("click", () => {
+            document.documentElement.classList.toggle('dark');
+            if (document.documentElement.classList.contains('dark')) {
+                localStorage.theme = 'dark';
+                $("#icon-moon").classList.add('hidden');
+                $("#icon-sun").classList.remove('hidden');
+            } else {
+                localStorage.theme = 'light';
+                $("#icon-moon").classList.remove('hidden');
+                $("#icon-sun").classList.add('hidden');
+            }
+        });
+
+        // --- AUTH ---
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                $("#auth-container").classList.add("hidden");
+                $("#app-container").classList.remove("hidden");
+                initializeApp();
+            } else {
+                currentUser = null;
+                $("#auth-container").classList.remove("hidden");
+                $("#app-container").classList.add("hidden");
+                $("#loading-spinner").classList.add("hidden");
+            }
+        });
+        $("#login-btn").addEventListener("click", () => auth.signInWithPopup(googleProvider));
+        $("#logout-btn").addEventListener("click", () => auth.signOut());
+
+        // --- INIT ---
+        async function initializeApp() {
+            $("#loading-spinner").classList.remove("hidden");
+            try {
+                await loadUserProfile();
+                const planDoc = await plansCollection.doc(currentUser.uid).get();
+                if (planDoc.exists) currentMealPlan = planDoc.data().plan || {};
+                await checkIfAdmin();
+
+                menuCollection.onSnapshot(snapshot => {
+                    allMenuItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderFilteredMenuView();
+                    if (currentUser.role === 'admin') renderAdminMenuList();
+                });
+
+                renderProfileView();
+                renderMealPlanGrid();
+                showView("profile-view");
+            } catch (err) { console.error(err); } 
+            finally { $("#loading-spinner").classList.add("hidden"); }
+        }
+
+        // --- NAVIGATION ---
+        $$(".nav-btn").forEach(btn => btn.addEventListener("click", () => showView(btn.dataset.view)));
+
+        function showView(viewId) {
+            $$(".view").forEach(v => v.classList.add("hidden"));
+            $$(".nav-btn").forEach(b => {
+                b.classList.remove("bg-wmGreen", "text-wmGold", "border-wmGold", "dark:bg-gray-800", "dark:text-gray-200");
+                b.classList.add("bg-white", "text-gray-700", "border-transparent", "dark:bg-gray-800", "dark:text-gray-200");
+            });
+            const activeBtn = $(`[data-view="${viewId}"]`);
+            if(viewId === 'admin-view') {
+                activeBtn.classList.remove("bg-gray-800", "text-wmGold");
+                activeBtn.classList.add("bg-black", "text-white");
+            } else {
+                activeBtn.classList.remove("bg-white", "text-gray-700", "border-transparent", "dark:bg-gray-800", "dark:text-gray-200");
+                activeBtn.classList.add("bg-wmGreen", "text-wmGold", "border-wmGold");
+            }
+            $(`#${viewId}`).classList.remove("hidden");
+        }
+
+        // --- PROFILE ---
+        async function loadUserProfile() {
+            const doc = await usersCollection.doc(currentUser.uid).get();
+            if (doc.exists) {
+                userProfile = { ...userProfile, ...doc.data() };
+                if (!userProfile.dietaryLaws) userProfile.dietaryLaws = [];
+            }
+        }
+        function renderProfileView() {
+            $(`input[name="lifestyle"][value="${userProfile.lifestyle}"]`).checked = true;
+            $$('#allergy-options input').forEach(cb => cb.checked = userProfile.allergies.includes(cb.value));
+            $$('#religious-options input').forEach(cb => cb.checked = userProfile.dietaryLaws ? userProfile.dietaryLaws.includes(cb.value) : false);
+        }
+        $("#save-profile-btn").addEventListener("click", async () => {
+            userProfile.lifestyle = $(`input[name="lifestyle"]:checked`).value;
+            userProfile.allergies = Array.from($$('#allergy-options input:checked')).map(cb => cb.value);
+            userProfile.dietaryLaws = Array.from($$('#religious-options input:checked')).map(cb => cb.value);
+            await usersCollection.doc(currentUser.uid).set(userProfile, { merge: true });
+            $("#profile-save-status").textContent = "Saved!";
+            setTimeout(() => $("#profile-save-status").textContent = "", 2000);
+            renderFilteredMenuView();
+        });
+
+        // --- LOGIC ---
+        function checkSafety(item) {
+             let safe = true;
+             if (userProfile.lifestyle === 'Vegan' && !item.tags.includes('Vegan')) safe = false;
+             if (userProfile.lifestyle === 'Vegetarian' && (!item.tags.includes('Vegetarian') && !item.tags.includes('Vegan'))) safe = false;
+             if (userProfile.dietaryLaws && userProfile.dietaryLaws.length > 0) {
+                 userProfile.dietaryLaws.forEach(law => { if (!item.tags.includes(law)) safe = false; });
+             }
+             if (userProfile.allergies.length > 0) {
+                 const hasAllergy = userProfile.allergies.some(a => item.tags.includes(a));
+                 if (hasAllergy) safe = false;
+                 if (userProfile.allergies.includes("Contains Gluten") && item.tags.includes("Gluten-Free")) {} 
+             }
+             return safe;
+        }
+        function getMenuForDisplay(day = null, meal = null) {
+            let items = [...allMenuItems];
+            if (day) items = items.filter(i => i.day === day);
+            if (meal) items = items.filter(i => i.meal === meal);
+            return items.map(item => ({ ...item, isSafe: checkSafety(item) }));
+        }
+
+        // --- RENDER MENU ---
+        $("#show-all-toggle").addEventListener("change", (e) => {
+            showAllItems = e.target.checked;
+            $("#menu-subtitle").textContent = showAllItems ? "Showing ALL items. Unsafe items grayed out." : "NoshBot is showing only items safe for your profile.";
+            renderFilteredMenuView();
+        });
+
+        function renderFilteredMenuView() {
+            const container = $("#filtered-menu-content");
+            container.innerHTML = "";
+            const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+            days.forEach(day => {
+                let dayItems = getMenuForDisplay(day);
+                if (!showAllItems) dayItems = dayItems.filter(i => i.isSafe);
+                if (dayItems.length === 0) return;
+
+                let dayHtml = `<div class="mb-8"><h3 class="text-2xl font-bold text-wmGreen dark:text-wmGold border-b-2 border-wmGold pb-2 mb-4">${day}</h3>`;
+                ["Breakfast", "Lunch", "Dinner"].forEach(meal => {
+                    const mealItems = dayItems.filter(i => i.meal === meal);
+                    if (mealItems.length > 0) {
+                        dayHtml += `<h4 class="font-bold text-gray-600 dark:text-gray-300 mb-3 mt-4 text-lg font-sans uppercase">${meal}</h4>`;
+                        dayHtml += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+                        mealItems.forEach(item => {
+                            const opacityClass = item.isSafe ? "opacity-100" : "opacity-50 grayscale";
+                            const safetyIcon = item.isSafe ? "" : "<span class='text-red-500 font-bold ml-2 text-xs'>⚠️ RESTRICTED</span>";
+                            let badges = item.tags.map(tag => {
+                                let color = "bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-200";
+                                if(tag === "Vegan") color = "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+                                if(tag === "Vegetarian") color = "bg-green-50 text-green-600 dark:bg-green-800 dark:text-green-100";
+                                if(tag === "Gluten-Free") color = "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+                                if(tag === "Halal" || tag === "Kosher") color = "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+                                return `<span class="tag-badge inline-block rounded-full px-2 py-1 ${color} mr-1 mb-1">${tag}</span>`;
+                            }).join("");
+                            
+                            const stationBadge = item.station ? `<div class="text-xs uppercase font-bold text-gray-500 dark:text-gray-400 mb-1 tracking-wider">📍 ${item.station}</div>` : '';
+
+                            dayHtml += `
+                                <div class="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:shadow-md transition p-4 ${opacityClass} flex flex-col justify-between">
+                                    <div>
+                                        ${stationBadge}
+                                        <div class="font-bold text-lg text-gray-800 dark:text-white mb-2">${item.name} ${safetyIcon}</div>
+                                        <div class="flex flex-wrap">${badges}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        dayHtml += `</div>`;
+                    }
+                });
+                dayHtml += `</div>`;
+                container.innerHTML += dayHtml;
+            });
+            if (container.innerHTML === "") container.innerHTML = "<p>No items found.</p>";
+        }
+
+        // --- MEAL PLAN & AI ---
+        function renderMealPlanGrid() {
+            const grid = $("#meal-plan-grid");
+            const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+            const meals = ["Breakfast", "Lunch", "Dinner"];
+            grid.innerHTML = "";
+            grid.innerHTML += `<div class="md:hidden"></div>`; 
+            days.forEach(d => grid.innerHTML += `<div class="hidden md:block font-bold text-center text-wmGreen dark:text-wmGold bg-gray-100 dark:bg-gray-700 rounded-t-lg py-2">${d.substring(0,3)}</div>`);
+            
+            meals.forEach(meal => {
+                days.forEach(day => {
+                    // Check if currentMealPlan[day][meal] is Array or String
+                    let foods = currentMealPlan[day.toLowerCase()]?.[meal];
+                    if (!foods) foods = [];
+                    if (typeof foods === 'string') foods = [foods]; // backward compatibility
+
+                    let foodHtml = foods.map(f => `
+                        <div class="text-xs mb-1 p-1 bg-gray-100 dark:bg-gray-600 rounded flex justify-between items-center">
+                            <span class="truncate">${f}</span>
+                        </div>
+                    `).join('');
+
+                    if (foods.length === 0) foodHtml = `<span class="text-gray-400 text-xs italic">Empty</span>`;
+
+                    grid.innerHTML += `
+                        <div class="relative border border-gray-200 dark:border-gray-600 p-2 min-h-[100px] rounded bg-white dark:bg-gray-700 hover:border-wmGold transition flex flex-col justify-between group">
+                            <div class="md:hidden text-xs font-bold text-gray-400 mb-1">${day} - ${meal}</div>
+                            <div class="flex-grow">${foodHtml}</div>
+                            <button class="add-food-btn mt-2 self-end text-wmGreen dark:text-wmGold opacity-50 group-hover:opacity-100 hover:text-wmGold font-bold text-xl" data-day="${day.toLowerCase()}" data-meal="${meal}">
+                                ${foods.length > 0 ? '✎' : '+'}
+                            </button>
+                        </div>
+                    `;
+                });
+            });
+        }
+        
+        $("#meal-plan-grid").addEventListener("click", (e) => {
+            if (e.target.closest(".add-food-btn")) {
+                const btn = e.target.closest(".add-food-btn");
+                showFoodPicker(btn.dataset.day, btn.dataset.meal);
+            }
+        });
+        
+        $("#clear-plan-btn").addEventListener("click", () => {
+             if(confirm("Clear plan?")) { currentMealPlan = {}; renderMealPlanGrid(); }
+        });
+        
+        $("#restore-plan-btn").addEventListener("click", async () => {
+            const planDoc = await plansCollection.doc(currentUser.uid).get();
+            if (planDoc.exists) { currentMealPlan = planDoc.data().plan || {}; renderMealPlanGrid(); alert("Plan restored."); }
+        });
+
+        // AUTO-FILL FEATURE
+        $("#auto-fill-btn").addEventListener("click", async () => {
+            if(!confirm("This will overwrite your current empty slots with random safe meals. Continue?")) return;
+            
+            const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+            const meals = ["Breakfast", "Lunch", "Dinner"];
+            
+            days.forEach(day => {
+                const dayKey = day.toLowerCase();
+                if (!currentMealPlan[dayKey]) currentMealPlan[dayKey] = {};
+                
+                meals.forEach(meal => {
+                    // Only fill if empty
+                    if (!currentMealPlan[dayKey][meal] || currentMealPlan[dayKey][meal].length === 0) {
+                        // Get safe options
+                        let options = getMenuForDisplay(day, meal).filter(item => item.isSafe);
+                        
+                        if (options.length > 0) {
+                            // Pick one random item
+                            const randomItem = options[Math.floor(Math.random() * options.length)];
+                            currentMealPlan[dayKey][meal] = [randomItem.name];
+                        }
+                    }
+                });
+            });
+            
+            renderMealPlanGrid();
+            await plansCollection.doc(currentUser.uid).set({ plan: currentMealPlan });
+            alert("Week auto-filled!");
+        });
+
+        // --- PICKER (MULTI-SELECT) ---
+        function showFoodPicker(day, meal) {
+            currentModalContext = { day, meal };
+            const prettyDay = day.charAt(0).toUpperCase() + day.slice(1);
+            $("#modal-title").textContent = `${prettyDay} ${meal}`;
+            
+            // Load existing selection
+            let existing = currentMealPlan[day]?.[meal] || [];
+            if(typeof existing === 'string') existing = [existing];
+            tempSelectedItems = [...existing]; // Copy array
+
+            let items = getMenuForDisplay(prettyDay, meal);
+            if (!showAllItems) items = items.filter(i => i.isSafe);
+
+            const list = $("#modal-food-list");
+            list.innerHTML = "";
+            
+            if (items.length > 0) {
+                items.forEach(item => {
+                    const safeClass = item.isSafe ? "" : "opacity-50 grayscale";
+                    const warning = item.isSafe ? "" : "⚠️";
+                    const stationText = item.station ? `<span class="text-xs text-gray-400 block">📍 ${item.station}</span>` : '';
+                    
+                    const btn = document.createElement("button");
+                    // Base classes
+                    btn.className = `w-full text-left p-3 rounded hover:bg-gray-100 dark:hover:bg-gray-600 border-b dark:border-gray-600 flex justify-between items-center group transition ${safeClass}`;
+                    
+                    // Check if already selected
+                    if (tempSelectedItems.includes(item.name)) {
+                        btn.classList.add("food-selected");
+                    }
+
+                    btn.innerHTML = `
+                        <div>
+                            <div class="font-bold text-gray-700 dark:text-gray-200 group-hover:text-wmGreen dark:group-hover:text-wmGold">${item.name} ${warning}</div>
+                            ${stationText}
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-500 dark:text-gray-200 px-2 py-1 rounded group-hover:bg-white mr-2">${item.tags.join(', ')}</span>
+                            ${tempSelectedItems.includes(item.name) ? '✅' : ''}
+                        </div>
+                    `;
+                    
+                    // Toggle logic on click
+                    btn.onclick = () => {
+                        if(tempSelectedItems.includes(item.name)) {
+                            tempSelectedItems = tempSelectedItems.filter(i => i !== item.name);
+                            btn.classList.remove("food-selected");
+                            btn.querySelector("div:last-child").innerHTML = `<span class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-500 dark:text-gray-200 px-2 py-1 rounded group-hover:bg-white mr-2">${item.tags.join(', ')}</span>`;
+                        } else {
+                            tempSelectedItems.push(item.name);
+                            btn.classList.add("food-selected");
+                            btn.querySelector("div:last-child").innerHTML += ' ✅';
+                        }
+                    };
+                    
+                    list.appendChild(btn);
+                });
+            } else { list.innerHTML = "<p class='text-gray-500 italic'>No options found.</p>"; }
+            $("#food-picker-modal").classList.remove("hidden");
+        }
+
+        $("#modal-close-btn").addEventListener("click", () => $("#food-picker-modal").classList.add("hidden"));
+        
+        $("#modal-clear-btn").addEventListener("click", () => {
+            tempSelectedItems = [];
+            saveSelection();
+        });
+
+        $("#modal-save-btn").addEventListener("click", () => {
+            saveSelection();
+        });
+
+        async function saveSelection() {
+            const { day, meal } = currentModalContext;
+            if (!currentMealPlan[day]) currentMealPlan[day] = {};
+            
+            // Save array of items
+            currentMealPlan[day][meal] = tempSelectedItems;
+            
+            $("#food-picker-modal").classList.add("hidden");
+            renderMealPlanGrid();
+            await plansCollection.doc(currentUser.uid).set({ plan: currentMealPlan });
+        }
+
+        // --- GEMINI AI HANDLER ---
+        $("#ai-insight-btn").addEventListener("click", async () => {
+            const contentDiv = $("#ai-content");
+            const modal = $("#ai-modal");
+            
+            if (Object.keys(currentMealPlan).length === 0) {
+                alert("Your plan is empty! Add some meals first.");
+                return;
+            }
+
+            modal.classList.remove("hidden");
+            contentDiv.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="animate-spin rounded-full h-12 w-12 border-b-4 border-wmGreen mb-4"></div><p>NoshBot is analyzing your nutrition...</p></div>`;
+
+            try {
+                const prompt = `
+                I am a college student at William & Mary. Please analyze my weekly meal plan for nutritional balance.
+                
+                My Profile:
+                - Lifestyle: ${userProfile.lifestyle}
+                - Allergies/Restrictions: ${userProfile.allergies.join(', ') || 'None'}
+                - Dietary Laws: ${userProfile.dietaryLaws.join(', ') || 'None'}
+
+                My Meal Plan (JSON):
+                ${JSON.stringify(currentMealPlan)}
+
+                Please provide:
+                1. A brief summary of my week's nutrition.
+                2. Highlight any missing food groups or potential nutrient deficiencies.
+                3. Three specific suggestions to improve (e.g., "Add more protein on Tuesday lunch").
+                
+                Format the response in clean HTML with <h3> for headings, <ul> for lists, and <strong> for emphasis. Do not use markdown backticks.
+                `;
+
+                const model = genAI.getGenerativeModel({ model: "gemini-pro"});
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                const text = response.text();
+                contentDiv.innerHTML = text; 
+            } catch (error) {
+                console.error(error);
+                contentDiv.innerHTML = `<p class="text-red-500">Error connecting to NoshBot AI. Please check your API Key and try again.</p>`;
+            }
+        });
+        $("#ai-modal-close").addEventListener("click", () => $("#ai-modal").classList.add("hidden"));
+
+        // --- ADMIN ---
+        async function checkIfAdmin() {
+            const doc = await usersCollection.doc(currentUser.uid).get();
+            if (doc.exists && doc.data().role === 'admin') {
+                currentUser.role = 'admin';
+                $("#admin-nav-btn").classList.remove("hidden");
+            }
+        }
+        
+        $("#every-day-checkbox").addEventListener("change", (e) => {
+            $("#food-day").disabled = e.target.checked;
+        });
+
+        $("#add-menu-item-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const tags = Array.from($$('#admin-tags input:checked')).map(cb => cb.value);
+            const isEveryDay = $("#every-day-checkbox").checked;
+            
+            const itemData = {
+                name: $("#food-name").value,
+                meal: $("#food-meal").value,
+                station: $("#food-station").value,
+                tags
+            };
+
+            if (isEveryDay) {
+                const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+                const batch = db.batch();
+                days.forEach(day => {
+                    const docRef = menuCollection.doc(); 
+                    batch.set(docRef, { ...itemData, day: day });
+                });
+                await batch.commit();
+            } else {
+                await menuCollection.add({ ...itemData, day: $("#food-day").value });
+            }
+            $("#add-menu-item-form").reset();
+            $("#food-day").disabled = false;
+        });
+        
+        // --- BULK UPLOAD HANDLERS ---
+        $("#fill-sample-data-btn").addEventListener("click", () => {
+             const sampleData = [
+                {name: "Mongolian BBQ", day: "Monday", meal: "Lunch", station: "Global Kitchen", tags: []},
+                {name: "Vegan Burger", day: "Monday", meal: "Lunch", station: "Under The Hood", tags: ["Vegan", "Vegetarian"]},
+                {name: "Chicken Nuggets", day: "Monday", meal: "Lunch", station: "Under The Hood", tags: ["Halal"]},
+                {name: "Caesar Salad", day: "Monday", meal: "Lunch", station: "Graze", tags: ["Vegetarian"]},
+                {name: "Roasted Salmon", day: "Monday", meal: "Dinner", station: "Main Ingredient", tags: ["Gluten-Free"]},
+                {name: "Eggplant Parmesan", day: "Monday", meal: "Dinner", station: "Main Ingredient", tags: ["Vegetarian"]},
+                {name: "Gluten-Free Pasta", day: "Monday", meal: "Dinner", station: "True Balance", tags: ["Gluten-Free", "Vegan"]},
+                {name: "Tater Tots", day: "Tuesday", meal: "Lunch", station: "Under The Hood", tags: ["Vegetarian"]},
+                {name: "Turkey Sandwich", day: "Tuesday", meal: "Lunch", station: "Sweet Pickles", tags: []},
+                {name: "Gyros", day: "Tuesday", meal: "Dinner", station: "Global Kitchen", tags: []},
+                {name: "Pepperoni Pizza", day: "Wednesday", meal: "Lunch", station: "Pizza", tags: ["Contains Dairy", "Contains Gluten"]},
+                {name: "Cheese Pizza", day: "Wednesday", meal: "Lunch", station: "Pizza", tags: ["Vegetarian", "Contains Dairy", "Contains Gluten"]},
+                {name: "Scrambled Eggs", day: "Wednesday", meal: "Breakfast", station: "Main Ingredient", tags: ["Vegetarian", "Gluten-Free"]},
+                {name: "Pancakes", day: "Wednesday", meal: "Breakfast", station: "Main Ingredient", tags: ["Vegetarian", "Contains Gluten"]},
+                {name: "Fruit Salad", day: "Wednesday", meal: "Breakfast", station: "Fruit and yogurt bar", tags: ["Vegan", "Vegetarian", "Gluten-Free"]},
+                {name: "Ramen Bowl", day: "Thursday", meal: "Dinner", station: "Global Kitchen", tags: ["Contains Soy"]},
+                {name: "Mediterranean Salad", day: "Thursday", meal: "Lunch", station: "Graze", tags: ["Vegan", "Gluten-Free"]},
+                {name: "Beef Brisket (Kosher)", day: "Friday", meal: "Dinner", station: "Main Ingredient", tags: ["Kosher"]},
+                {name: "Smoothie", day: "Friday", meal: "Breakfast", station: "Smoothies & Milkshakes", tags: ["Vegetarian", "Gluten-Free"]}
+             ];
+             $("#bulk-json-input").value = JSON.stringify(sampleData, null, 2);
+        });
+
+        $("#bulk-import-btn").addEventListener("click", async () => {
+             const raw = $("#bulk-json-input").value;
+             try {
+                 const items = JSON.parse(raw);
+                 if(!Array.isArray(items)) throw new Error("Data must be an array []");
+                 
+                 let count = 0;
+                 if(confirm(`Are you sure you want to add ${items.length} items to the database?`)) {
+                     for(const item of items) {
+                         await menuCollection.add(item);
+                         count++;
+                     }
+                     alert(`Successfully imported ${count} items!`);
+                     $("#bulk-json-input").value = "";
+                 }
+             } catch(e) {
+                 alert("Invalid JSON format. Please check your text.");
+                 console.error(e);
+             }
+        });
+
+        function renderAdminMenuList() {
+            const list = $("#admin-menu-list");
+            list.innerHTML = "";
+            const sorted = [...allMenuItems].sort((a,b) => a.day.localeCompare(b.day));
+            sorted.forEach(item => {
+                const el = document.createElement("div");
+                el.className = "flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded shadow-sm border-l-4 border-wmGreen";
+                el.innerHTML = `
+                    <div>
+                        <div class="font-bold text-gray-800 dark:text-gray-200">${item.name}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">${item.day} - ${item.meal} - 📍 ${item.station || '?'}</div>
+                        <div class="text-xs text-wmGreen dark:text-wmGold">${item.tags.join(', ')}</div>
+                    </div>
+                    <button class="text-red-500 hover:text-red-700 font-bold px-2 py-1 hover:bg-red-50 dark:hover:bg-red-900 rounded" onclick="deleteItem('${item.id}')">&times;</button>
+                `;
+                list.appendChild(el);
+            });
+        }
+        window.deleteItem = async (id) => { if(confirm("Delete this item?")) await menuCollection.doc(id).delete(); };
+    </script>
+</body>
+</html>
