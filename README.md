@@ -1,5 +1,9 @@
 NoshBot | W&M Dining Planner
+
+
 Brought to you by the Meateorologists
+
+
 Made with the assistence of Gemini 
 
 website: noshbot.netlify.app
@@ -34,14 +38,14 @@ For Admins
   
 
 Tech Stack
-Frontend: HTML5, Vanilla JavaScript (ES6+).
+- Frontend: HTML5, Vanilla JavaScript (ES6+).
 
-Styling: Tailwind CSS (via CDN).
+- Styling: Tailwind CSS (via CDN).
 
-Database: Google Firebase Firestore.
+- Database: Google Firebase Firestore.
 
-Authentication: Firebase Google Auth.
+- Authentication: Firebase Google Auth.
 
-AI: Google Gemini API.
+- AI: Google Gemini API.
 
-PWA: Service Workers & Web Manifest.
+- PWA: Service Workers & Web Manifest.
