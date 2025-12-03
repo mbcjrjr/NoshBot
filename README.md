@@ -29,6 +29,8 @@ For Admins
 
 - Recurring Items: Easily set "Staple" items (like eggs or salad bar) to appear every day of the week automatically.
 
+  
+
 Tech Stack
 Frontend: HTML5, Vanilla JavaScript (ES6+).
 
