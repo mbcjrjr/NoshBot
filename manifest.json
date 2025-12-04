@@ -1,0 +1,20 @@
+{
+  "name": "NoshBot",
+  "short_name": "NoshBot",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#115740",
+  "theme_color": "#115740",
+  "icons": [
+    {
+      "src": "noshbot-griffin.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "noshbot-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
