@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+    <!DOCTYPE html>
 <html lang="en" class="light">
 <head>
     <meta charset="UTF-8">
@@ -59,6 +59,16 @@
             background-color: #064e3b !important; /* Green-900 */
             border-left: 4px solid #B9975B !important;
         }
+
+        /* "Eating Elsewhere" specific styles */
+        .ee-selected {
+            background-color: #f3f4f6 !important; /* Gray-100 */
+            border-left: 4px solid #4b5563 !important; /* Gray-600 */
+        }
+        .dark .ee-selected {
+            background-color: #374151 !important; /* Gray-700 */
+            border-left: 4px solid #9ca3af !important; /* Gray-400 */
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 flex flex-col min-h-screen transition-colors duration-300">
@@ -85,7 +95,7 @@
             Sign In with Google
         </button>
 
-        <p class="text-xs text-gray-400 font-sans uppercase tracking-widest">Brought to you by The Meateorologists!</p>
+        <p class="text-xs text-gray-400 font-sans uppercase tracking-widest">Brought to you by the Meateorologists</p>
     </div>
 
     <div id="app-container" class="hidden flex-grow container mx-auto max-w-6xl p-4 flex flex-col">
@@ -279,7 +289,7 @@
             <div id="admin-menu-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
         </div>
 
-        <footer class="mt-8 text-center text-gray-400 text-xs font-sans pb-4">Brought to you by The Meateorologists!</footer>
+        <footer class="mt-8 text-center text-gray-400 text-xs font-sans pb-4">Brought to you by the Meateorologists</footer>
     </div>
     
     <div id="food-picker-modal" class="hidden fixed inset-0 z-40 bg-wmGreen bg-opacity-80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
@@ -335,7 +345,7 @@
         };
 
         // 2. PASTE GEMINI API KEY
-        const GEMINI_API_KEY = "AIzaSyA_zEsYvgKT6d8bRrXmVj0m02-PqTvUSWs";
+        const GEMINI_API_KEY = "AIzaSyBwQJLds7oiz1joQRi_jqs0pGBgjR0DB6E";
 
         // ------------------------------------------------------------------
         // IMPORT GEMINI
@@ -570,16 +580,25 @@
             
             meals.forEach(meal => {
                 days.forEach(day => {
-                    // Check if currentMealPlan[day][meal] is Array or String
                     let foods = currentMealPlan[day.toLowerCase()]?.[meal];
                     if (!foods) foods = [];
-                    if (typeof foods === 'string') foods = [foods]; // backward compatibility
+                    if (typeof foods === 'string') foods = [foods];
 
-                    let foodHtml = foods.map(f => `
-                        <div class="text-xs mb-1 p-1 bg-gray-100 dark:bg-gray-600 rounded flex justify-between items-center">
-                            <span class="truncate">${f}</span>
+                    let foodHtml = foods.map(f => {
+                        let styleClass = "bg-gray-100 dark:bg-gray-600";
+                        let displayText = f;
+                        
+                        if(f.startsWith("Eating Elsewhere")) {
+                            styleClass = "bg-gray-700 text-white font-bold";
+                            const location = f.split(': ')[1];
+                            displayText = location ? `🍽️ ${location}` : `🍽️ Eating Elsewhere`;
+                        }
+
+                        return `
+                        <div class="text-xs mb-1 p-1 rounded flex justify-between items-center ${styleClass}">
+                            <span class="truncate">${displayText}</span>
                         </div>
-                    `).join('');
+                    `}).join('');
 
                     if (foods.length === 0) foodHtml = `<span class="text-gray-400 text-xs italic">Empty</span>`;
 
@@ -624,13 +643,9 @@
                 if (!currentMealPlan[dayKey]) currentMealPlan[dayKey] = {};
                 
                 meals.forEach(meal => {
-                    // Only fill if empty
                     if (!currentMealPlan[dayKey][meal] || currentMealPlan[dayKey][meal].length === 0) {
-                        // Get safe options
                         let options = getMenuForDisplay(day, meal).filter(item => item.isSafe);
-                        
                         if (options.length > 0) {
-                            // Pick one random item
                             const randomItem = options[Math.floor(Math.random() * options.length)];
                             currentMealPlan[dayKey][meal] = [randomItem.name];
                         }
@@ -643,7 +658,7 @@
             alert("Week auto-filled!");
         });
 
-        // --- PICKER (MULTI-SELECT) ---
+        // --- PICKER (MULTI-SELECT - FIXED) ---
         function showFoodPicker(day, meal) {
             currentModalContext = { day, meal };
             const prettyDay = day.charAt(0).toUpperCase() + day.slice(1);
@@ -652,14 +667,69 @@
             // Load existing selection
             let existing = currentMealPlan[day]?.[meal] || [];
             if(typeof existing === 'string') existing = [existing];
-            tempSelectedItems = [...existing]; // Copy array
+            tempSelectedItems = [...existing]; 
 
+            // Show Modal
+            $("#food-picker-modal").classList.remove("hidden");
+            
+            // Render the List (Separate Function)
+            renderFoodPickerList();
+        }
+
+        function renderFoodPickerList() {
+            const { day, meal } = currentModalContext;
+            const prettyDay = day.charAt(0).toUpperCase() + day.slice(1);
+            
             let items = getMenuForDisplay(prettyDay, meal);
             if (!showAllItems) items = items.filter(i => i.isSafe);
 
             const list = $("#modal-food-list");
             list.innerHTML = "";
             
+            // 1. ADD SPECIAL "EATING ELSEWHERE" OPTION WITH INPUT
+            const eeWrapper = document.createElement("div");
+            const eeItem = tempSelectedItems.find(i => i.startsWith("Eating Elsewhere"));
+            const isEESelected = !!eeItem;
+            const currentEELocation = isEESelected ? (eeItem.split(': ')[1] || '') : '';
+            const eeClass = isEESelected ? "ee-selected" : "hover:bg-gray-100 dark:hover:bg-gray-700";
+            
+            eeWrapper.innerHTML = `
+                <button class="w-full text-left p-4 rounded border border-gray-300 dark:border-gray-600 flex justify-between items-center group transition font-bold ${eeClass}" id="ee-btn-toggle">
+                    <div class="text-gray-800 dark:text-white">🍽️ Eating Elsewhere</div>
+                    <div>${isEESelected ? '✅' : ''}</div>
+                </button>
+                <div class="${isEESelected ? 'block' : 'hidden'} mt-2 ml-4 border-l-2 border-gray-300 pl-4">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Where are you going?</label>
+                    <input type="text" id="ee-location-input" value="${currentEELocation}" 
+                           class="w-full p-2 border rounded bg-white dark:bg-gray-900 dark:text-white text-sm" 
+                           placeholder="e.g. Chipotle, Home, Chick-fil-A...">
+                </div>
+            `;
+            list.appendChild(eeWrapper);
+
+            // Bind Events for EE
+            const toggleBtn = eeWrapper.querySelector("#ee-btn-toggle");
+            const inputField = eeWrapper.querySelector("#ee-location-input");
+
+            toggleBtn.onclick = () => {
+                if(isEESelected) {
+                    tempSelectedItems = tempSelectedItems.filter(i => !i.startsWith("Eating Elsewhere"));
+                } else {
+                    tempSelectedItems = ["Eating Elsewhere"]; // Clear other foods
+                }
+                renderFoodPickerList(); // Re-render
+            };
+
+            inputField.oninput = (e) => {
+                const val = e.target.value;
+                // Update the string in array
+                const index = tempSelectedItems.findIndex(i => i.startsWith("Eating Elsewhere"));
+                if(index !== -1) {
+                    tempSelectedItems[index] = val ? `Eating Elsewhere: ${val}` : "Eating Elsewhere";
+                }
+            };
+
+            // 2. RENDER NORMAL ITEMS
             if (items.length > 0) {
                 items.forEach(item => {
                     const safeClass = item.isSafe ? "" : "opacity-50 grayscale";
@@ -667,14 +737,11 @@
                     const stationText = item.station ? `<span class="text-xs text-gray-400 block">📍 ${item.station}</span>` : '';
                     
                     const btn = document.createElement("button");
-                    // Base classes
-                    btn.className = `w-full text-left p-3 rounded hover:bg-gray-100 dark:hover:bg-gray-600 border-b dark:border-gray-600 flex justify-between items-center group transition ${safeClass}`;
+                    const isSelected = tempSelectedItems.includes(item.name);
+                    const selectedClass = isSelected ? "food-selected" : "";
                     
-                    // Check if already selected
-                    if (tempSelectedItems.includes(item.name)) {
-                        btn.classList.add("food-selected");
-                    }
-
+                    btn.className = `w-full text-left p-3 rounded hover:bg-gray-100 dark:hover:bg-gray-600 border-b dark:border-gray-600 flex justify-between items-center group transition ${safeClass} ${selectedClass}`;
+                    
                     btn.innerHTML = `
                         <div>
                             <div class="font-bold text-gray-700 dark:text-gray-200 group-hover:text-wmGreen dark:group-hover:text-wmGold">${item.name} ${warning}</div>
@@ -682,27 +749,29 @@
                         </div>
                         <div class="flex items-center">
                             <span class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-500 dark:text-gray-200 px-2 py-1 rounded group-hover:bg-white mr-2">${item.tags.join(', ')}</span>
-                            ${tempSelectedItems.includes(item.name) ? '✅' : ''}
+                            ${isSelected ? '✅' : ''}
                         </div>
                     `;
                     
-                    // Toggle logic on click
                     btn.onclick = () => {
+                        // Logic: If picking food, remove "Eating Elsewhere"
+                        if(tempSelectedItems.some(i => i.startsWith("Eating Elsewhere"))) {
+                            tempSelectedItems = [];
+                        }
+                        
                         if(tempSelectedItems.includes(item.name)) {
                             tempSelectedItems = tempSelectedItems.filter(i => i !== item.name);
-                            btn.classList.remove("food-selected");
-                            btn.querySelector("div:last-child").innerHTML = `<span class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-500 dark:text-gray-200 px-2 py-1 rounded group-hover:bg-white mr-2">${item.tags.join(', ')}</span>`;
                         } else {
                             tempSelectedItems.push(item.name);
-                            btn.classList.add("food-selected");
-                            btn.querySelector("div:last-child").innerHTML += ' ✅';
                         }
+                        renderFoodPickerList(); // Re-render ONLY the list
                     };
                     
                     list.appendChild(btn);
                 });
-            } else { list.innerHTML = "<p class='text-gray-500 italic'>No options found.</p>"; }
-            $("#food-picker-modal").classList.remove("hidden");
+            } else { 
+                list.innerHTML += "<p class='text-gray-500 italic mt-4 text-center'>No dining hall options found.</p>"; 
+            }
         }
 
         $("#modal-close-btn").addEventListener("click", () => $("#food-picker-modal").classList.add("hidden"));
@@ -881,5 +950,4 @@
         window.deleteItem = async (id) => { if(confirm("Delete this item?")) await menuCollection.doc(id).delete(); };
     </script>
 </body>
-
 </html>
